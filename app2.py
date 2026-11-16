@@ -524,13 +524,14 @@ else:
 # FOOTER
 # ─────────────────────────────────────────────────────────────
 
+# ─────────────────────────────────────────────────────────────
+# FOOTER
+# ─────────────────────────────────────────────────────────────
+
 st.markdown("---")
 st.markdown(
     '<p style="text-align:center; font-size:0.75rem; color:#888; font-family: Arvo, serif;">'
     '🤖 Gemini 2.0 Flash | 🔍 DuckDuckGo | '
-    '<a href="https://ai.google.dev" style="color:#FF914D;">ai.google.dev</a></p>',
-    unsafe_allow_html=True
-)
     '<a href="https://ai.google.dev" style="color:#FF914D;">ai.google.dev</a></p>',
     unsafe_allow_html=True
 )
