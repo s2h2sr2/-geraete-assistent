@@ -11,7 +11,7 @@ import urllib.parse
 # ─────────────────────────────────────────────────────────────
 
 genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
-model = genai.GenerativeModel("gemini-3.8-flash")
+model = genai.GenerativeModel("gemini-2.0-flash")
 
 # ─────────────────────────────────────────────────────────────
 # SEITEN-KONFIGURATION
@@ -94,16 +94,6 @@ html, body, [class*="css"] {
 }
 .stButton > button:hover {
     background-color: #e07a35 !important;
-}
-
-.upload-box {
-    background-color: white;
-    border-radius: 14px;
-    padding: 2rem;
-    box-shadow: 0 4px 16px rgba(0,0,0,0.12);
-    border: 2px solid #C3D8FF;
-    margin-top: 1rem;
-    font-family: 'Arvo', serif;
 }
 
 .tag {
@@ -190,17 +180,41 @@ def duckduckgo_suche(suchanfrage: str, anzahl: int = 5) -> list[dict]:
 
 
 def loesung_fuer_frage(frage: str) -> str:
-    prompt = (
-        "Du bist ein hilfreicher Reparatur-Assistent für Haushaltsgeräte.\n\n"
-        f"Jemand hat folgendes Problem mit einem Haushaltsgerät:\n'{frage}'\n\n"
-        "Erstelle eine klare, schrittweise Anleitung zur Problemlösung auf Deutsch.\n"
-        "- Nummeriere die Schritte.\n"
-        "- Weise auf Sicherheitshinweise hin (z.B. Strom ausschalten).\n"
-        "- Weise darauf hin, wenn professionelle Hilfe nötig ist.\n"
-        "- Halte die Antwort verständlich und praktisch."
-    )
+    # Zuerst online suchen
+    suchbegriff = f"{frage} Lösung Reparatur Haushaltsgerät"
+    suchbegriff = " ".join(suchbegriff.split()[:12])
+    try:
+        suchergebnisse = duckduckgo_suche(suchbegriff)
+    except Exception:
+        suchergebnisse = []
+
+    if suchergebnisse:
+        quellen_text = "\n\n".join([
+            f"Quelle {i+1}: {r['titel']}\nURL: {r['link']}\nAuszug: {r['snippet']}"
+            for i, r in enumerate(suchergebnisse)
+        ])
+        prompt = (
+            "Du bist ein hilfreicher Reparatur-Assistent für Haushaltsgeräte.\n\n"
+            f"Problem: '{frage}'\n\n"
+            f"Gefundene Web-Quellen:\n{quellen_text}\n\n"
+            "Erstelle eine klare, schrittweise Anleitung zur Problemlösung auf Deutsch.\n"
+            "- Nummeriere die Schritte.\n"
+            "- Weise auf Sicherheitshinweise hin.\n"
+            "- Nenne am Ende die verwendeten Quellen mit URL.\n"
+            "- Weise darauf hin, wenn professionelle Hilfe nötig ist."
+        )
+    else:
+        prompt = (
+            "Du bist ein hilfreicher Reparatur-Assistent für Haushaltsgeräte.\n\n"
+            f"Jemand hat folgendes Problem:\n'{frage}'\n\n"
+            "Erstelle eine klare, schrittweise Anleitung zur Problemlösung auf Deutsch.\n"
+            "- Nummeriere die Schritte.\n"
+            "- Weise auf Sicherheitshinweise hin.\n"
+            "- Weise darauf hin, wenn professionelle Hilfe nötig ist."
+        )
+
     response = model.generate_content(prompt)
-    return response.text
+    return response.text, suchergebnisse
 
 
 def loesung_zusammenfassen(geraet_info: str, problem: str, suchergebnisse: list[dict]) -> str:
@@ -246,6 +260,7 @@ defaults = {
     "geraet_ergebnis": None,
     "aktive_frage": None,
     "frage_loesung": None,
+    "frage_quellen": [],
     "problem_input_wert": "",
     "oft_gefragt": [
         "Waschmaschine schleudert nicht",
@@ -349,7 +364,7 @@ else:
     col_links, col_rechts = st.columns([1, 2], gap="large")
 
     # ══════════════════════════════════════════════
-    # LINKE SPALTE – Oft gefragt + Upload-Button
+    # LINKE SPALTE
     # ══════════════════════════════════════════════
     with col_links:
         st.markdown("### 🔥 Oft gefragt")
@@ -358,6 +373,7 @@ else:
             if st.button(f"❓ {frage}", key=f"frage_{frage}", use_container_width=True):
                 st.session_state["aktive_frage"] = frage
                 st.session_state["frage_loesung"] = None
+                st.session_state["frage_quellen"] = []
                 st.session_state["upload_modal_offen"] = False
 
         st.markdown("---")
@@ -368,11 +384,11 @@ else:
             st.session_state["frage_loesung"] = None
 
     # ══════════════════════════════════════════════
-    # RECHTE SPALTE – Ergebnisse / Upload
+    # RECHTE SPALTE
     # ══════════════════════════════════════════════
     with col_rechts:
 
-        # ── FALL 1: Upload-Bereich ist offen ──────
+        # ── FALL 1: Upload offen ───────────────────
         if st.session_state["upload_modal_offen"]:
             st.markdown("### 📷 Gerät fotografieren & Problem beschreiben")
 
@@ -382,7 +398,6 @@ else:
                 key="foto_upload"
             )
 
-            # Textfeld – Wert wird sofort in session_state gespeichert
             def problem_geaendert():
                 st.session_state["problem_input_wert"] = st.session_state["problem_input"]
 
@@ -401,7 +416,7 @@ else:
             col_btn1, col_btn2 = st.columns(2)
             with col_btn1:
                 analyse_btn = st.button(
-                    "🔍 Gerät erkennen & Lösung suchen",
+                    "🚀 Lösung suchen",
                     use_container_width=True,
                     type="primary"
                 )
@@ -421,7 +436,8 @@ else:
                     image = Image.open(uploaded_file)
                     st.image(image, caption="Dein Gerät", use_container_width=True)
 
-                    with st.spinner("🔍 KI analysiert das Bild ..."):
+                    # Schritt 1: Gerät erkennen
+                    with st.spinner("🔍 Schritt 1: KI analysiert das Bild ..."):
                         try:
                             geraet_info = geraet_identifizieren(image)
                             st.session_state["geraet_ergebnis"] = geraet_info
@@ -436,74 +452,76 @@ else:
                         unsafe_allow_html=True
                     )
 
+                    # Schritt 2: Online suchen
+                    with st.spinner("🌐 Schritt 2: Suche online nach Lösungen ..."):
+                        try:
+                            erste_zeile = geraet_info.splitlines()[0].replace("**Gerät:**", "").strip()
+                            suchbegriff = f"{erste_zeile} {problem_text[:80]} Lösung Reparatur"
+                            suchbegriff = " ".join(suchbegriff.split()[:12])
+                            suchergebnisse = duckduckgo_suche(suchbegriff)
+                        except Exception as e:
+                            st.error(f"Fehler bei der Websuche: {e}")
+                            st.stop()
+
+                    # Schritt 3: Lösung erstellen
+                    with st.spinner("🤖 Schritt 3: KI erstellt deine Schritt-für-Schritt-Lösung ..."):
+                        try:
+                            loesung = loesung_zusammenfassen(
+                                geraet_info, problem_text, suchergebnisse
+                            )
+                        except Exception as e:
+                            st.error(f"Fehler bei der Lösungserstellung: {e}")
+                            st.stop()
+
+                    # Zuletzt gesucht
                     kurz = problem_text[:40] + ("..." if len(problem_text) > 40 else "")
                     if kurz not in st.session_state["zuletzt_gesucht"]:
                         st.session_state["zuletzt_gesucht"].append(kurz)
 
-                    schluessel = cache_schluessel(geraet_info, problem_text)
-                    gecacht    = cache_laden(schluessel)
+                    cache_speichern(cache_schluessel(geraet_info, problem_text), loesung, suchergebnisse)
 
-                    if gecacht:
-                        st.info("💾 Aus dem Speicher geladen!")
-                        st.markdown("### 🛠️ Hier ist wie du es reparierst:")
-                        st.markdown(gecacht["loesung"])
-                        st.markdown("### 🔗 Quellen:")
-                        for q in gecacht["quellen"]:
+                    st.success("✅ Lösung gefunden!")
+                    st.markdown("### 🛠️ Hier ist wie du es reparierst:")
+                    st.markdown(loesung)
+
+                    if suchergebnisse:
+                        st.markdown("### 🔗 Verwendete Web-Quellen:")
+                        for q in suchergebnisse:
                             st.markdown(f"- [{q['titel']}]({q['link']})")
-                    else:
-                        with st.spinner("🌐 Suche im Web (DuckDuckGo) ..."):
-                            try:
-                                erste_zeile = geraet_info.splitlines()[0].replace("**Gerät:**", "").strip()
-                                suchbegriff = f"{erste_zeile} {problem_text[:80]} Lösung Reparatur"
-                                suchbegriff = " ".join(suchbegriff.split()[:12])
-                                suchergebnisse = duckduckgo_suche(suchbegriff)
-                            except Exception as e:
-                                st.error(f"Fehler bei der Websuche: {e}")
-                                st.stop()
 
-                        if not suchergebnisse:
-                            st.warning("Keine Ergebnisse. Versuche eine genauere Beschreibung.")
-                        else:
-                            with st.spinner("🤖 KI erstellt Schritt-für-Schritt-Lösung ..."):
-                                loesung = loesung_zusammenfassen(
-                                    geraet_info, problem_text, suchergebnisse
-                                )
-                            cache_speichern(schluessel, loesung, suchergebnisse)
-                            st.success("✅ Lösung gefunden!")
-                            st.markdown("### 🛠️ Hier ist wie du es reparierst:")
-                            st.markdown(loesung)
-                            st.markdown("### 🔗 Verwendete Web-Quellen:")
-                            for q in suchergebnisse:
-                                st.markdown(f"- [{q['titel']}]({q['link']})")
-
-        # ── FALL 2: Oft-gefragt Frage wurde geklickt ──
+        # ── FALL 2: Oft-gefragt Frage geklickt ────
         elif st.session_state["aktive_frage"]:
             frage = st.session_state["aktive_frage"]
             st.markdown(f"### ❓ {frage}")
             st.markdown("---")
 
+            # Lösung einmalig laden
             if st.session_state["frage_loesung"] is None:
-                with st.spinner("🤖 KI sucht Lösung ..."):
+                with st.spinner("🌐 Suche online nach Lösungen ..."):
                     try:
-                        loesung = loesung_fuer_frage(frage)
+                        loesung, quellen = loesung_fuer_frage(frage)
                         st.session_state["frage_loesung"] = loesung
+                        st.session_state["frage_quellen"] = quellen
                     except Exception as e:
                         st.error(f"Fehler: {e}")
                         st.stop()
 
             if st.session_state["frage_loesung"]:
                 st.markdown("### 🛠️ Hier ist wie du es reparierst:")
-                st.markdown(
-                    f'<div class="card">{st.session_state["frage_loesung"]}</div>',
-                    unsafe_allow_html=True
-                )
+                st.markdown(st.session_state["frage_loesung"])
+
+                if st.session_state.get("frage_quellen"):
+                    st.markdown("### 🔗 Verwendete Web-Quellen:")
+                    for q in st.session_state["frage_quellen"]:
+                        st.markdown(f"- [{q['titel']}]({q['link']})")
 
             if st.button("← Zurück zur Übersicht"):
                 st.session_state["aktive_frage"] = None
                 st.session_state["frage_loesung"] = None
+                st.session_state["frage_quellen"] = []
                 st.rerun()
 
-        # ── FALL 3: Startansicht ──────────────────────
+        # ── FALL 3: Startansicht ───────────────────
         else:
             st.markdown(
                 '<div class="card">'
@@ -514,7 +532,6 @@ else:
                 '</div>',
                 unsafe_allow_html=True
             )
-
 
 # ─────────────────────────────────────────────────────────────
 # FOOTER
