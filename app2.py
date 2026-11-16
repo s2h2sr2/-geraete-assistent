@@ -37,7 +37,6 @@ html, body, [class*="css"] {
     color: #1a1a2e !important;
 }
 
-/* ── Titel ── */
 .easy-fix-title {
     font-family: 'Pacifico', cursive !important;
     font-size: 3.2rem !important;
@@ -47,7 +46,6 @@ html, body, [class*="css"] {
     margin-bottom: 0.2rem;
 }
 
-/* ── Sidebar ── */
 [data-testid="stSidebar"] {
     background-color: #C3D8FF !important;
     padding: 1.5rem 1rem;
@@ -71,7 +69,6 @@ html, body, [class*="css"] {
     background-color: #e07a35 !important;
 }
 
-/* ── Karten ── */
 .card {
     background-color: white;
     border-radius: 12px;
@@ -86,23 +83,6 @@ html, body, [class*="css"] {
     margin-top: 0;
 }
 
-/* ── Oft-gefragt Karte klickbar ── */
-.frage-card {
-    background-color: white;
-    border-radius: 12px;
-    padding: 1rem 1.2rem;
-    margin-bottom: 0.8rem;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.07);
-    border-left: 4px solid #C3D8FF;
-    font-family: 'Arvo', serif;
-    cursor: pointer;
-    transition: border-color 0.2s;
-}
-.frage-card:hover {
-    border-left-color: #FF914D;
-}
-
-/* ── Buttons Hauptbereich ── */
 .stButton > button {
     background-color: #FF914D !important;
     color: white !important;
@@ -116,7 +96,6 @@ html, body, [class*="css"] {
     background-color: #e07a35 !important;
 }
 
-/* ── Upload-Modal-Box ── */
 .upload-box {
     background-color: white;
     border-radius: 14px;
@@ -127,7 +106,6 @@ html, body, [class*="css"] {
     font-family: 'Arvo', serif;
 }
 
-/* ── Tags ── */
 .tag {
     display: inline-block;
     background-color: #EFF5FF;
@@ -212,7 +190,6 @@ def duckduckgo_suche(suchanfrage: str, anzahl: int = 5) -> list[dict]:
 
 
 def loesung_fuer_frage(frage: str) -> str:
-    """Lässt Gemini direkt eine Lösung für eine oft gestellte Frage erstellen."""
     prompt = (
         "Du bist ein hilfreicher Reparatur-Assistent für Haushaltsgeräte.\n\n"
         f"Jemand hat folgendes Problem mit einem Haushaltsgerät:\n'{frage}'\n\n"
@@ -269,6 +246,7 @@ defaults = {
     "geraet_ergebnis": None,
     "aktive_frage": None,
     "frage_loesung": None,
+    "problem_input_wert": "",
     "oft_gefragt": [
         "Waschmaschine schleudert nicht",
         "Kühlschrank kühlt nicht mehr richtig",
@@ -330,7 +308,11 @@ ansicht = st.session_state.get("ansicht", "home")
 # ── PROFIL ──────────────────────────────────────────────────
 if ansicht == "profil":
     st.markdown("## 👤 Profil")
-    st.markdown('<div class="card"><h4>Dein Profil</h4><p>Hier könnten deine gespeicherten Geräte erscheinen.</p></div>', unsafe_allow_html=True)
+    st.markdown(
+        '<div class="card"><h4>Dein Profil</h4>'
+        '<p>Hier könnten deine gespeicherten Geräte erscheinen.</p></div>',
+        unsafe_allow_html=True
+    )
     if st.button("← Zurück"):
         st.session_state["ansicht"] = "home"
 
@@ -340,7 +322,11 @@ elif ansicht == "historie":
     if st.session_state.get("lösungs_cache"):
         for key, val in st.session_state["lösungs_cache"].items():
             geraet_teil, problem_teil = key.split("|||")
-            st.markdown(f'<div class="card"><h4>🔧 {geraet_teil.title()}</h4><p><b>Problem:</b> {problem_teil}</p></div>', unsafe_allow_html=True)
+            st.markdown(
+                f'<div class="card"><h4>🔧 {geraet_teil.title()}</h4>'
+                f'<p><b>Problem:</b> {problem_teil}</p></div>',
+                unsafe_allow_html=True
+            )
             with st.expander("Lösung anzeigen"):
                 st.markdown(val["loesung"])
     else:
@@ -363,21 +349,19 @@ else:
     col_links, col_rechts = st.columns([1, 2], gap="large")
 
     # ══════════════════════════════════════════════
-    # LINKE SPALTE – Oft gefragt
+    # LINKE SPALTE – Oft gefragt + Upload-Button
     # ══════════════════════════════════════════════
     with col_links:
         st.markdown("### 🔥 Oft gefragt")
 
         for frage in st.session_state["oft_gefragt"]:
-            # Jede Frage ist ein eigener Button
             if st.button(f"❓ {frage}", key=f"frage_{frage}", use_container_width=True):
                 st.session_state["aktive_frage"] = frage
-                st.session_state["frage_loesung"] = None   # zurücksetzen → neu laden
+                st.session_state["frage_loesung"] = None
                 st.session_state["upload_modal_offen"] = False
 
         st.markdown("---")
 
-        # 📷 Foto hochladen Button
         if st.button("📷 Foto hochladen & Problem beschreiben", use_container_width=True):
             st.session_state["upload_modal_offen"] = not st.session_state["upload_modal_offen"]
             st.session_state["aktive_frage"] = None
@@ -391,7 +375,6 @@ else:
         # ── FALL 1: Upload-Bereich ist offen ──────
         if st.session_state["upload_modal_offen"]:
             st.markdown("### 📷 Gerät fotografieren & Problem beschreiben")
-            st.markdown('<div class="upload-box">', unsafe_allow_html=True)
 
             uploaded_file = st.file_uploader(
                 "Lade ein Foto deines Geräts hoch (JPG, PNG, WEBP):",
@@ -399,27 +382,37 @@ else:
                 key="foto_upload"
             )
 
-            problem_text = st.text_area(
+            # Textfeld – Wert wird sofort in session_state gespeichert
+            def problem_geaendert():
+                st.session_state["problem_input_wert"] = st.session_state["problem_input"]
+
+            st.text_area(
                 "Was ist das Problem?",
                 placeholder=(
                     "z. B. 'Die Waschmaschine schleudert nicht mehr und zeigt E3 an.'\n"
                     "z. B. 'Der Kühlschrank macht Geräusche und kühlt nicht.'"
                 ),
                 height=110,
-                key="problem_input"
+                key="problem_input",
+                value=st.session_state["problem_input_wert"],
+                on_change=problem_geaendert
             )
-
-            st.markdown('</div>', unsafe_allow_html=True)
 
             col_btn1, col_btn2 = st.columns(2)
             with col_btn1:
-                analyse_btn = st.button("🔍 Gerät erkennen & Lösung suchen", use_container_width=True, type="primary")
+                analyse_btn = st.button(
+                    "🔍 Gerät erkennen & Lösung suchen",
+                    use_container_width=True,
+                    type="primary"
+                )
             with col_btn2:
                 if st.button("✖ Schließen", use_container_width=True):
                     st.session_state["upload_modal_offen"] = False
+                    st.session_state["problem_input_wert"] = ""
                     st.rerun()
 
             if analyse_btn:
+                problem_text = st.session_state["problem_input_wert"]
                 if not uploaded_file:
                     st.warning("⚠️ Bitte zuerst ein Foto hochladen.")
                 elif not problem_text.strip():
@@ -438,9 +431,11 @@ else:
 
                     st.success("✅ Gerät erkannt!")
                     st.markdown("### 🏷️ Das Modell ist")
-                    st.markdown(f'<div class="card">{geraet_info}</div>', unsafe_allow_html=True)
+                    st.markdown(
+                        f'<div class="card">{geraet_info}</div>',
+                        unsafe_allow_html=True
+                    )
 
-                    # Zuletzt gesucht aktualisieren
                     kurz = problem_text[:40] + ("..." if len(problem_text) > 40 else "")
                     if kurz not in st.session_state["zuletzt_gesucht"]:
                         st.session_state["zuletzt_gesucht"].append(kurz)
@@ -470,10 +465,10 @@ else:
                             st.warning("Keine Ergebnisse. Versuche eine genauere Beschreibung.")
                         else:
                             with st.spinner("🤖 KI erstellt Schritt-für-Schritt-Lösung ..."):
-                                loesung = loesung_zusammenfassen(geraet_info, problem_text, suchergebnisse)
-
+                                loesung = loesung_zusammenfassen(
+                                    geraet_info, problem_text, suchergebnisse
+                                )
                             cache_speichern(schluessel, loesung, suchergebnisse)
-
                             st.success("✅ Lösung gefunden!")
                             st.markdown("### 🛠️ Hier ist wie du es reparierst:")
                             st.markdown(loesung)
@@ -487,7 +482,6 @@ else:
             st.markdown(f"### ❓ {frage}")
             st.markdown("---")
 
-            # Lösung laden (einmalig, dann gecacht in session state)
             if st.session_state["frage_loesung"] is None:
                 with st.spinner("🤖 KI sucht Lösung ..."):
                     try:
@@ -515,14 +509,12 @@ else:
                 '<div class="card">'
                 '<h4>👋 Willkommen bei Easy-Fix!</h4>'
                 '<p>Wähle links eine häufig gestellte Frage aus – '
-                'oder lade ein Foto deines Geräts hoch, um eine persönliche Lösung zu erhalten.</p>'
+                'oder lade ein Foto deines Geräts hoch, '
+                'um eine persönliche Lösung zu erhalten.</p>'
                 '</div>',
                 unsafe_allow_html=True
             )
 
-# ─────────────────────────────────────────────────────────────
-# FOOTER
-# ─────────────────────────────────────────────────────────────
 
 # ─────────────────────────────────────────────────────────────
 # FOOTER
